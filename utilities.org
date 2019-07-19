@@ -7,3 +7,467 @@
 #+TAGS: backup
 
 :END:
+* Backup Files from My Computer to a USB Stick.
+Note that the trailing slash at the end of the paths is important! Also these
+scripts will delete any files in the destination directory that you have
+deleted in the source directory!
+** systemd Ensure Backup Runs at Least Once a Day.
+
+ #+begin_src shell
+#  /lib/systemd/system/usb-backup.service
+ [Unit]
+ Description=Perform backup to usb stick
+
+ [Service]
+ Type=simple
+ Nice=19
+ IOSchedulingClass=2
+ IOSchedulingPriority=7
+ ExecStart=/home/ian/bin/backup_to_usb.sh
+#+end_src
+
+
+ #+begin_src shell
+# /lib/systemd/system/usb-backup.timer3
+ [Unit]
+ Description=Backup date to use stick
+
+ [Timer]
+ OnCalendar=daily
+ Persistent=True
+
+ [Install]
+ WantedBy=timers.target
+#+end_src
+
+** Scripts.
+ #+begin_src shell :shebang #!/bin/zsh :tangle ./test.sh :exports code :noweb yes
+if [ -d "/run/media/ian/chrome128/Documents/" ]; then
+    echo "Backing up Documents"
+    rsync -avz --delete /home/ian/Documents/ /run/media/ian/chrome128/Documents/
+fi
+
+if [ -d "/run/media/ian/chrome128/.emacs.d/" ]; then
+    echo "Backing up .emacs.d"
+    rsync -avz --delete /home/ian/.emacs.d/ /run/media/ian/chrome128/.emacs.d/
+fi
+
+if [ -d "/run/media/ian/chrome128/.dotfiles/" ]; then
+    echo "Backing up .dotfiles"
+    rsync -avz --delete /home/ian/.dotfiles/ /run/media/ian/chrome128/.dotfiles/
+fi
+
+if [ -d "/run/media/ian/chrome128/Maildir/" ]; then
+    echo "Backing up Maildir"
+    rsync -avz --delete /home/ian/Maildir/ /run/media/ian/chrome128/Maildir/
+fi
+
+if [ -d "/run/media/ian/chrome128/.offlineimap/" ]; then
+    echo "Backing up .offlineimap"
+    rsync -avz --delete /home/ian/.offlineimap/ /run/media/ian/chrome128/.offlineimap
+/
+fi
+
+
+ #+end_src
+
+ #+begin_src shell :shebang #!/bin/zsh :tangle ./ghbackup.sh :exports code :noweb yes
+#!/bin/bash
+# A simple script to backup an organization's GitHub repositories.
+
+# NOTE: if you have more than 100 repositories, you'll need to step thru the list of repos
+# returned by GitHub one page at a time, as described at https://gist.github.com/darktim/5582423
+
+GHBU_BACKUP_DIR=${GHBU_BACKUP_DIR-"~/github-backups"}                  # where to place the backup files
+GHBU_ORG=${GHBU_ORG-"ianbarton"}                                   # the GitHub organization whose repos will be backed up
+                                                                     # (if you're backing up a user's repos instead, this should be your GitHub username)
+GHBU_UNAME=${GHBU_UNAME-"ianbarton"}                               # the username of a GitHub account (to use with the GitHub API)
+GHBU_PASSWD=${GHBU_PASSWD-"I6ppWVp9"}                             # the password for that account
+GHBU_GITHOST=${GHBU_GITHOST-"github.com"}                            # the GitHub hostname (see comments)
+GHBU_PRUNE_OLD=${GHBU_PRUNE_OLD-true}                                # when `true`, old backups will be deleted
+GHBU_PRUNE_AFTER_N_DAYS=${GHBU_PRUNE_AFTER_N_DAYS-3}                 # the min age (in days) of backup files to delete
+GHBU_SILENT=${GHBU_SILENT-false}                                     # when `true`, only show error messages
+GHBU_API=${GHBU_API-"https://api.github.com"}                        # base URI for the GitHub API
+GHBU_GIT_CLONE_CMD="git clone --quiet --mirror git@${GHBU_GITHOST}:" # base command to use to clone GitHub repos
+
+TSTAMP=`date "+%Y%m%d-%H%M"`
+
+# The function `check` will exit the script if the given command fails.
+function check {
+  "$@"
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "ERROR: Encountered error (${status}) while running the following:" >&2
+    echo "           $@"  >&2
+    echo "       (at line ${BASH_LINENO[0]} of file $0.)"  >&2
+    echo "       Aborting." >&2
+    exit $status
+  fi
+}
+
+# The function `tgz` will create a gzipped tar archive of the specified file ($1) and then remove the original
+function tgz {
+   check tar zcf $1.tar.gz $1 && check rm -rf $1
+}
+
+$GHBU_SILENT || (echo "" && echo "=== INITIALIZING ===" && echo "")
+
+$GHBU_SILENT || echo "Using backup directory $GHBU_BACKUP_DIR"
+check mkdir -p $GHBU_BACKUP_DIR
+
+$GHBU_SILENT || echo -n "Fetching list of repositories for ${GHBU_ORG}..."
+
+#REPOLIST=`check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/orgs/${GHBU_ORG}/repos\?per_page=100 -q | check grep "\"name\"" | check awk -F': "' '{print $2}' | check sed -e 's/",//g'`
+# NOTE: if you're backing up a *user's* repos, not an organizations, use this instead:
+REPOLIST=`check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/user/repos -q | check grep "\"name\"" | check awk -F': "' '{print $2}' | check sed -e 's/",//g'`
+
+$GHBU_SILENT || echo "found `echo $REPOLIST | wc -w` repositories."
+
+
+$GHBU_SILENT || (echo "" && echo "=== BACKING UP ===" && echo "")
+
+for REPO in $REPOLIST; do
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO}"
+   check ${GHBU_GIT_CLONE_CMD}${GHBU_ORG}/${REPO}.git ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}-${TSTAMP}.git && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}-${TSTAMP}.git
+
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO}.wiki (if any)"
+   ${GHBU_GIT_CLONE_CMD}${GHBU_ORG}/${REPO}.wiki.git ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.wiki-${TSTAMP}.git 2>/dev/null && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.wiki-${TSTAMP}.git
+
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO} issues"
+   check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/repos/${GHBU_ORG}/${REPO}/issues -q > ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.issues-${TSTAMP} && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.issues-${TSTAMP}
+done
+
+if $GHBU_PRUNE_OLD; then
+  $GHBU_SILENT || (echo "" && echo "=== PRUNING ===" && echo "")
+  $GHBU_SILENT || echo "Pruning backup files ${GHBU_PRUNE_AFTER_N_DAYS} days old or older."
+  $GHBU_SILENT || echo "Found `find $GHBU_BACKUP_DIR -name '*.tar.gz' -mtime +$GHBU_PRUNE_AFTER_N_DAYS | wc -l` files to prune."
+  find $GHBU_BACKUP_DIR -name '*.tar.gz' -mtime +$GHBU_PRUNE_AFTER_N_DAYS -exec rm -fv {} > /dev/null \;
+fi
+
+$GHBU_SILENT || (echo "" && echo "=== DONE ===" && echo "")
+$GHBU_SILENT || (echo "GitHub backup completed." && echo "")
+
+
+ #+end_src
+
+
+ #+begin_src shell :shebang #!/bin/zsh :tangle ./github_list_repos.sh :exports code :noweb yes
+#!/bin/zsh
+# See: http://stackoverflow.com/questions/19576742/how-to-clone-all-repos-at-once-from-github
+#USER=YOURUSERNAME; PAGE=1
+#curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" |
+#  grep -e 'git_url*' |
+#  cut -d \" -f 4 |
+#  xargs -L1 git clone
+
+
+USER=ianbarton; PAGE=1
+curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" | grep -e 'git_url*' | cut -d \" -f 4
+
+
+ #+end_src
+
+
+ #+begin_src shell :shebang #!/bin/zsh :tangle ./i3_suspend.sh :exports code :noweb yes
+#!/bin/sh
+lock() {
+    i3lock
+}
+
+case "$1" in
+    lock)
+        i3lock-fancy
+        ;;
+    logout)
+        i3-msg exit
+        ;;
+    suspend)
+        i3lock-fancy && systemctl suspend
+        ;;
+    hibernate)
+        lock && systemctl hibernate
+        ;;
+    reboot)
+        systemctl reboot
+        ;;
+    shutdown)
+        systemctl poweroff
+        ;;
+    *)
+        echo "Usage: $0 {lock|logout|suspend|hibernate|reboot|shutdown}"
+        exit 2
+esac
+
+exit 0
+
+
+ #+end_src
+
+
+
+ #+begin_src shell :shebang #!/bin/zsh :tangle ./netflixip.sh :exports code :noweb yes
+
+#!/bin/zsh
+
+# http://www.dd-wrt.com/phpBB2/viewtopic.php?p=1014263#1014263
+
+#SCRIPT_DIR="/tmp/etc/config"
+#SCRIPT="$SCRIPT_DIR/add-routes.wanup"
+#mkdir -p $SCRIPT_DIR
+
+#cat << "EOF" > $SCRIPT
+##!/bin/sh
+
+# dd-wrt selective domain routing
+#WAN_GW="$(nvram get wan_gateway)"
+WAN_GW="usb"
+
+# list domains for selective routing
+for domain in \
+"netflix.com" \
+"ichnaea.netflix.com" \
+"movies.netflix.com" \
+"www.netflix.com" \
+"nflxext.com" \
+"cdn1.nflxext.com" \
+"nflximg.com" \
+"nflxvideo.net" \
+"ipv4_1.cxl0.c145.sjc002.ix.nflxvideo.net" \
+"amazonaws.com" \
+"whatsmyip.org"
+do
+  # extract ip addresses
+    for ip in $(nslookup $domain | awk '/^Name:/,0{if (/^Addr/)print $3}'); do
+        `echo $ip | cut -d . -f 1,2`.0.0/16
+        echo "Test"
+    # add class c route for each ip address to wan gateway
+    #ip route add `echo $ip | cut -d . -f 1,2`.0.0/16 via $WAN_GW
+  done
+done
+
+# flush cache
+#ip route flush cache
+
+ #+end_src
+* Python Script to Generate UUID's
+Useful for creating passwords, as UUID's are unique.
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./uuidgeen.py :exports code :noweb yes
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Author: Ian Barton <ian@wilkesley.net>
+
+
+import shortuuid
+
+print (shortuuid.uuid())
+
+
+#+end_src
+* Backup All Your Github Repositories.
+#+begin_src shell :shebang #!/bin/zsh :tangle ./ghbackup.sh :expoarts code :noweb yes
+#!/bin/bash
+# A simple script to backup an organization's GitHub repositories.
+
+# NOTE: if you have more than 100 repositories, you'll need to step thru the list of repos
+# returned by GitHub one page at a time, as described at https://gist.github.com/darktim/5582423
+
+GHBU_BACKUP_DIR=${GHBU_BACKUP_DIR-"~/github-backups"}                  # where to place the backup files
+GHBU_ORG=${GHBU_ORG-"ianbarton"}                                   # the GitHub organization whose repos will be backed up
+                                                                     # (if you're backing up a user's repos instead, this should be your GitHub username)
+GHBU_UNAME=${GHBU_UNAME-"ianbarton"}                               # the username of a GitHub account (to use with the GitHub API)
+GHBU_PASSWD=${GHBU_PASSWD-"I6ppWVp9"}                             # the password for that account
+GHBU_GITHOST=${GHBU_GITHOST-"github.com"}                            # the GitHub hostname (see comments)
+GHBU_PRUNE_OLD=${GHBU_PRUNE_OLD-true}                                # when `true`, old backups will be deleted
+GHBU_PRUNE_AFTER_N_DAYS=${GHBU_PRUNE_AFTER_N_DAYS-3}                 # the min age (in days) of backup files to delete
+GHBU_SILENT=${GHBU_SILENT-false}                                     # when `true`, only show error messages
+GHBU_API=${GHBU_API-"https://api.github.com"}                        # base URI for the GitHub API
+GHBU_GIT_CLONE_CMD="git clone --quiet --mirror git@${GHBU_GITHOST}:" # base command to use to clone GitHub repos
+
+TSTAMP=`date "+%Y%m%d-%H%M"`
+
+# The function `check` will exit the script if the given command fails.
+function check {
+  "$@"
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "ERROR: Encountered error (${status}) while running the following:" >&2
+    echo "           $@"  >&2
+    echo "       (at line ${BASH_LINENO[0]} of file $0.)"  >&2
+    echo "       Aborting." >&2
+    exit $status
+  fi
+}
+
+# The function `tgz` will create a gzipped tar archive of the specified file ($1) and then remove the original
+function tgz {
+   check tar zcf $1.tar.gz $1 && check rm -rf $1
+}
+
+$GHBU_SILENT || (echo "" && echo "=== INITIALIZING ===" && echo "")
+
+$GHBU_SILENT || echo "Using backup directory $GHBU_BACKUP_DIR"
+check mkdir -p $GHBU_BACKUP_DIR
+
+$GHBU_SILENT || echo -n "Fetching list of repositories for ${GHBU_ORG}..."
+
+#REPOLIST=`check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/orgs/${GHBU_ORG}/repos\?per_page=100 -q | check grep "\"name\"" | check awk -F': "' '{print $2}' | check sed -e 's/",//g'`
+# NOTE: if you're backing up a *user's* repos, not an organizations, use this instead:
+REPOLIST=`check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/user/repos -q | check grep "\"name\"" | check awk -F': "' '{print $2}' | check sed -e 's/",//g'`
+
+$GHBU_SILENT || echo "found `echo $REPOLIST | wc -w` repositories."
+
+
+$GHBU_SILENT || (echo "" && echo "=== BACKING UP ===" && echo "")
+
+for REPO in $REPOLIST; do
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO}"
+   check ${GHBU_GIT_CLONE_CMD}${GHBU_ORG}/${REPO}.git ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}-${TSTAMP}.git && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}-${TSTAMP}.git
+
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO}.wiki (if any)"
+   ${GHBU_GIT_CLONE_CMD}${GHBU_ORG}/${REPO}.wiki.git ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.wiki-${TSTAMP}.git 2>/dev/null && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.wiki-${TSTAMP}.git
+
+   $GHBU_SILENT || echo "Backing up ${GHBU_ORG}/${REPO} issues"
+   check curl --silent -u $GHBU_UNAME:$GHBU_PASSWD ${GHBU_API}/repos/${GHBU_ORG}/${REPO}/issues -q > ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.issues-${TSTAMP} && tgz ${GHBU_BACKUP_DIR}/${GHBU_ORG}-${REPO}.issues-${TSTAMP}
+done
+
+if $GHBU_PRUNE_OLD; then
+  $GHBU_SILENT || (echo "" && echo "=== PRUNING ===" && echo "")
+  $GHBU_SILENT || echo "Pruning backup files ${GHBU_PRUNE_AFTER_N_DAYS} days old or older."
+  $GHBU_SILENT || echo "Found `find $GHBU_BACKUP_DIR -name '*.tar.gz' -mtime +$GHBU_PRUNE_AFTER_N_DAYS | wc -l` files to prune."
+  find $GHBU_BACKUP_DIR -name '*.tar.gz' -mtime +$GHBU_PRUNE_AFTER_N_DAYS -exec rm -fv {} > /dev/null \;
+fi
+
+$GHBU_SILENT || (echo "" && echo "=== DONE ===" && echo "")
+$GHBU_SILENT || (echo "GitHub backup completed." && echo "")
+
+
+#+end_src
+* Obtain a List of ip Addresses for Netflix Servers.
+#+begin_src shell :shebang #!/bin/zsh :tangle ./netflixip.sh :exports code :noweb yes
+#!/bin/zsh
+
+# http://www.dd-wrt.com/phpBB2/viewtopic.php?p=1014263#1014263
+
+#SCRIPT_DIR="/tmp/etc/config"
+#SCRIPT="$SCRIPT_DIR/add-routes.wanup"
+#mkdir -p $SCRIPT_DIR
+
+#cat << "EOF" > $SCRIPT
+##!/bin/sh
+
+# dd-wrt selective domain routing
+#WAN_GW="$(nvram get wan_gateway)"
+WAN_GW="usb"
+
+# list domains for selective routing
+for domain in \
+"netflix.com" \
+"ichnaea.netflix.com" \
+"movies.netflix.com" \
+"www.netflix.com" \
+"nflxext.com" \
+"cdn1.nflxext.com" \
+"nflximg.com" \
+"nflxvideo.net" \
+"ipv4_1.cxl0.c145.sjc002.ix.nflxvideo.net" \
+"amazonaws.com" \
+"whatsmyip.org"
+do
+  # extract ip addresses
+    for ip in $(nslookup $domain | awk '/^Name:/,0{if (/^Addr/)print $3}'); do
+        `echo $ip | cut -d . -f 1,2`.0.0/16
+        echo "Test"
+    # add class c route for each ip address to wan gateway
+    #ip route add `echo $ip | cut -d . -f 1,2`.0.0/16 via $WAN_GW
+  done
+done
+
+# flush cache
+#ip route flush cache
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./github_list_repos.sh :exports code :noweb yes
+
+#!/bin/zsh
+# See: http://stackoverflow.com/questions/19576742/how-to-clone-all-repos-at-once-from-github
+#USER=YOURUSERNAME; PAGE=1
+#curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" |
+#  grep -e 'git_url*' |
+#  cut -d \" -f 4 |
+#  xargs -L1 git clone
+
+
+USER=ianbarton; PAGE=1
+curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" | grep -e 'git_url*' | cut -d \" -f 4
+
+#+end_src
+* Clone All Github Repos for a User.
+#+begin_src shell :shebang #!/bin/zsh :tangle ./github_list_repos.sh :exports code :noweb yes
+#!/bin/zsh
+# See: http://stackoverflow.com/questions/19576742/how-to-clone-all-repos-at-once-from-github
+#USER=YOURUSERNAME; PAGE=1
+#curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" |
+#  grep -e 'git_url*' |
+#  cut -d \" -f 4 |
+#  xargs -L1 git clone
+
+
+USER=ianbarton; PAGE=1
+curl "https://api.github.com/users/$USER/repos?page=$PAGE&per_page=100" | grep -e 'git_url*' | cut -d \" -f 4
+
+
+#+end_src
+* More Scripts.
+** i3.
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./i3_suspend.sh :exports code :noweb yes
+#!/bin/sh
+lock() {
+    i3lock
+}
+
+case "$1" in
+    lock)
+        i3lock-fancy
+        ;;
+    logout)
+        i3-msg exit
+        ;;
+    suspend)
+        i3lock-fancy && systemctl suspend
+        ;;
+    hibernate)
+        lock && systemctl hibernate
+        ;;
+    reboot)
+        systemctl reboot
+        ;;
+    shutdown)
+        systemctl poweroff
+        ;;
+    *)
+        echo "Usage: $0 {lock|logout|suspend|hibernate|reboot|shutdown}"
+        exit 2
+esac
+
+exit 0
+
+
+#+end_src
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./.sh :exports code :noweb yes
+
+
+#+end_src
+
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./.sh :exports code :noweb yes
+
+
+#+end_src
+
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./.sh :exports code :noweb yes
+
+
+#+end_src
