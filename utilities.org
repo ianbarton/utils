@@ -471,3 +471,76 @@ exit 0
 
 
 #+end_src
+* Commit and Push Github Repos.
+#+begin_src shell :shebang #!/bin/zsh :tangle ./autocommit.sh :exports code :noweb yes
+#!/bin/zsh
+
+# Autocommit repos at least once a day.
+
+cd ~/Documents/emacs/org
+git commit -a -m "Auto-commit."
+git push --all
+
+cd ~/Documents/emacs/timelog
+git commit -a -m "Auto-commit."
+git push --all
+
+cd ~/Documents/emacs/journal
+git commit -a -m "Auto-commit."
+git push --all
+
+#+end_src
+* Memacs.
+#+begin_src shell :shebang #!/bin/zsh :tangle ./memacs_phonecalls.sh :exports code :noweb yes
+#!/bin/zsh
+
+source ~/.virtualenvs/memacs/bin/activate
+
+ORG_FILE=~/Documents/emacs/org/org_files/memacs/phonecalls.org_archive
+MEMACSFILE=~/android_backups/$1
+
+echo $MEMACSFILE
+/home/ian/src/Memacs/bin/memacs_phonecalls_superbackup.py -a -f $MEMACSFILE -o $ORG_FILE
+
+#+end_src
+
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./memacs_phonecalls_superbackup.sh :exports code :noweb yes
+#!/bin/zsh
+
+source ~/.virtualenvs/my_env/bin/activate
+
+ORG_FILE=~/Documents/emacs/org/org_files/memacs/phonecalls.org_archive
+MEMACSFILE=~/android_backups/ian/superbackup/$1
+
+echo $MEMACSFILE
+~/Copy/src/Memacs/bin/memacs_phonecalls_superbackup.py -a -f $MEMACSFILE -o $ORG_FILE
+
+#+end_src
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./memacs_sms.sh :exports code :noweb yes
+#!/bin/zsh
+
+source ~/.virtualenvs/memacs/bin/activate
+
+ORG_FILE=~/Documents/emacs/org/org_files/memacs/sms.org_archive
+MEMACSFILE=~/android_backups/ian/SMSBackupRestore/$1
+
+echo $MEMACSFILE
+echo $ORG_FILE
+~/Copy/src/Memacs/bin/memacs_sms.py -a -f $MEMACSFILE -o $ORG_FILE
+#+end_src
+
+#+begin_src shell :shebang #!/bin/zsh :tangle ./memacs_sms_superbackup.sh :exports code :noweb yes
+#!/bin/zsh
+
+source ~/.virtualenvs/memacs/bin/activate
+
+ORG_FILE=~/Documents/emacs/org/org_files/memacs/sms.org_archive
+MEMACSFILE=~/android_backups/ian/SMSBackupRestore/$1
+
+echo $MEMACSFILE
+echo $ORG_FILE
+~/Copy/src/Memacs/bin/memacs_sms.py -a -f $MEMACSFILE -o $ORG_FILE
+
+#+end_src
