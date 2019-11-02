@@ -24,3 +24,9 @@ if [ -d "/run/media/ian/chrome128/.offlineimap/" ]; then
     rsync -avz --delete /home/ian/.offlineimap/ /run/media/ian/chrome128/.offlineimap
 /
 fi
+
+if [ -d "/run/media/ian/chrome128/Openshot/" ]; then
+    echo "Backing up OpenShot"
+    rsync -avz --delete /home/ian/Openshot/ /run/media/ian/chrome128/Openshot
+/
+fi
