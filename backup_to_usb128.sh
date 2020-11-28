@@ -14,9 +14,14 @@ if [ -d "/run/media/ian/chrome128/.dotfiles/" ]; then
     rsync -avz --delete /home/ian/.dotfiles/ /run/media/ian/chrome128/.dotfiles/
 fi
 
-if [ -d "/run/media/ian/chrome128/Maildir/" ]; then
-    echo "Backing up Maildir"
-    rsync -avz --delete /home/ian/Maildir/ /run/media/ian/chrome128/Maildir/
+#if [ -d "/run/media/ian/chrome128/Maildir/" ]; then
+#    echo "Backing up Maildir"
+#    rsync -avz --delete /home/ian/Maildir/ /run/media/ian/chrome128/Maildir/
+#fi
+
+if [ -d "/run/media/ian/chrome128/mbsync/" ]; then
+    echo "Backing up mbsync"
+    rsync -avz --delete /home/ian/mbsync/ /run/media/ian/chrome128/Maildir/
 fi
 
 if [ -d "/run/media/ian/chrome128/.offlineimap/" ]; then
@@ -28,5 +33,11 @@ fi
 if [ -d "/run/media/ian/chrome128/Openshot/" ]; then
     echo "Backing up OpenShot"
     rsync -avz --delete /home/ian/Openshot/ /run/media/ian/chrome128/Openshot
+/
+fi
+
+if [ -d "/run/media/ian/chrome128/voice_recordings/" ]; then
+    echo "Backing up voice_recordings"
+    rsync -avz  /home/ian/voice_recordings/ /run/media/ian/chrome128/voice_recordings
 /
 fi
